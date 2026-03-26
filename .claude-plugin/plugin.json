@@ -1,0 +1,19 @@
+{
+  "name": "channel-messenger",
+  "version": "0.1.0",
+  "description": "Channel plugin that bridges Claude Code with a messaging API via WebSocket",
+  "author": {
+    "name": "Dick Davis"
+  },
+  "userConfig": {
+    "host": {
+      "description": "API base URL (e.g. https://api.example.com)",
+      "required": true
+    },
+    "token": {
+      "description": "Authentication token for the messaging API",
+      "required": true,
+      "sensitive": true
+    }
+  }
+}
