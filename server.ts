@@ -7,13 +7,19 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { appendFileSync } from "fs";
+const LOG_PATH = "/tmp/messenger-plugin.log";
+function log(msg: string) {
+  appendFileSync(LOG_PATH, `${new Date().toISOString()} ${msg}\n`);
+}
+
 const HOST =
   process.env.MESSENGER_HOST || process.env.CLAUDE_PLUGIN_OPTION_HOST;
 const TOKEN =
   process.env.MESSENGER_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_TOKEN;
 
 if (!HOST || !TOKEN) {
-  console.error(
+  log(
     "Host and token must be set via MESSENGER_HOST/MESSENGER_TOKEN or plugin userConfig"
   );
   process.exit(1);
@@ -23,6 +29,7 @@ let sessionId: number;
 let ws: WebSocket | null = null;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30_000;
+let pingInterval: ReturnType<typeof setInterval> | null = null;
 
 // --- Session registration ---
 
@@ -33,7 +40,7 @@ async function registerSession(): Promise<{ id: number; name: string }> {
       Authorization: `Bearer ${TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ name: "claude-code" }),
+    body: JSON.stringify({}),
   });
   if (!res.ok) {
     throw new Error(`Session registration failed: ${res.status} ${await res.text()}`);
@@ -49,22 +56,36 @@ function connectWebSocket() {
 
   ws.addEventListener("open", () => {
     reconnectDelay = 1000;
+    log(`[messenger] WebSocket connected to session ${sessionId}`);
     ws!.send(JSON.stringify({ type: "auth", token: TOKEN }));
+
+    if (pingInterval) clearInterval(pingInterval);
+    pingInterval = setInterval(() => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 30_000);
   });
 
   ws.addEventListener("message", (event) => {
     try {
       const data = JSON.parse(String(event.data));
-      if (data.type === "message") {
+      log(`[messenger] WS received: ${JSON.stringify(data)}`);
+      if (data.type === "message" && data.message?.role !== "assistant") {
         deliverToChannel(data.message);
       }
     } catch {
-      // ignore malformed messages
+      log(`[messenger] WS malformed message: ${event.data}`);
     }
   });
 
-  ws.addEventListener("close", () => scheduleReconnect());
-  ws.addEventListener("error", () => {
+  ws.addEventListener("close", (event) => {
+    log(`[messenger] WS closed: code=${event.code} reason=${event.reason}`);
+    if (pingInterval) clearInterval(pingInterval);
+    scheduleReconnect();
+  });
+  ws.addEventListener("error", (event) => {
+    log(`[messenger] WS error:`, event);
     ws?.close();
   });
 }
@@ -78,8 +99,8 @@ function scheduleReconnect() {
 
 function deliverToChannel(message: Record<string, unknown>) {
   const content =
-    typeof message.text === "string"
-      ? message.text
+    typeof message.content === "string"
+      ? message.content
       : JSON.stringify(message);
 
   void mcp.notification({
@@ -122,10 +143,6 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: "object" as const,
         properties: {
           text: { type: "string", description: "Message text to send" },
-          reply_to: {
-            type: "string",
-            description: "Optional message ID to reply to",
-          },
         },
         required: ["text"],
       },
@@ -153,20 +170,19 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   switch (name) {
     case "reply": {
-      const { text, reply_to } = args as { text: string; reply_to?: string };
+      const { text } = args as { text: string };
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         return {
           content: [{ type: "text", text: "Error: WebSocket not connected" }],
           isError: true,
         };
       }
-      ws.send(
-        JSON.stringify({
-          type: "message",
-          text,
-          ...(reply_to ? { reply_to } : {}),
-        })
-      );
+      const payload = JSON.stringify({
+        type: "message",
+        content: text,
+      });
+      log(`[messenger] Sending: ${payload} (ws.readyState=${ws.readyState})`);
+      ws.send(payload);
       return { content: [{ type: "text", text: "Message sent" }] };
     }
 
@@ -181,7 +197,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           isError: true,
         };
       }
-      ws.send(JSON.stringify({ type: "edit", message_id, text }));
+      ws.send(JSON.stringify({ type: "edit", message_id, content: text }));
       return { content: [{ type: "text", text: "Message edited" }] };
     }
 
@@ -204,6 +220,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal:", err);
+  log("Fatal:", err);
   process.exit(1);
 });
