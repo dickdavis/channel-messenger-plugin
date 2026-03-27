@@ -32,16 +32,21 @@ cd /path/to/channel-messenger-plugin
 bun install
 ```
 
-### 3. Launch Claude Code with the channel
+### 3. Register the MCP server globally
 
-From the plugin project directory:
+Add the messenger server to your user-level config so it can be loaded from any project:
 
 ```bash
-cd /path/to/channel-messenger-plugin
-claude --dangerously-load-development-channels server:messenger
+claude mcp add messenger -s user -- caffeinate -i bun run --cwd /path/to/channel-messenger-plugin server.ts
 ```
 
-The `server:messenger` flag references the `messenger` MCP server defined in the project's `.mcp.json`. You must run this command from the plugin's project directory.
+### 4. Launch Claude Code with the channel
+
+From any project directory:
+
+```bash
+claude --dangerously-load-development-channels server:messenger
+```
 
 ## Usage
 
