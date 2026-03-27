@@ -161,21 +161,6 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["text"],
       },
     },
-    {
-      name: "edit_message",
-      description: "Edit a previously sent message",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          message_id: {
-            type: "string",
-            description: "ID of the message to edit",
-          },
-          text: { type: "string", description: "New message text" },
-        },
-        required: ["message_id", "text"],
-      },
-    },
   ],
 }));
 
@@ -198,21 +183,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       log(`[messenger] Sending: ${payload} (ws.readyState=${ws.readyState})`);
       ws.send(payload);
       return { content: [{ type: "text", text: "Message sent" }] };
-    }
-
-    case "edit_message": {
-      const { message_id, text } = args as {
-        message_id: string;
-        text: string;
-      };
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return {
-          content: [{ type: "text", text: "Error: WebSocket not connected" }],
-          isError: true,
-        };
-      }
-      ws.send(JSON.stringify({ type: "edit", message_id, content: text }));
-      return { content: [{ type: "text", text: "Message edited" }] };
     }
 
     default:
