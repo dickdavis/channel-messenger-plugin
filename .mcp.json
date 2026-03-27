@@ -2,11 +2,7 @@
   "mcpServers": {
     "messenger": {
       "command": "bun",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server.ts"],
-      "env": {
-        "MESSENGER_HOST": "${user_config.host}",
-        "MESSENGER_TOKEN": "${user_config.token}"
-      }
+      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "server.ts"]
     }
   }
 }

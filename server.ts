@@ -7,20 +7,34 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { appendFileSync } from "fs";
+import { appendFileSync, readFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+
+const STATE_DIR = join(homedir(), ".claude", "channels", "messenger");
+const ENV_FILE = join(STATE_DIR, ".env");
 const LOG_PATH = "/tmp/messenger-plugin.log";
+
 function log(msg: string) {
   appendFileSync(LOG_PATH, `${new Date().toISOString()} ${msg}\n`);
 }
 
-const HOST =
-  process.env.MESSENGER_HOST || process.env.CLAUDE_PLUGIN_OPTION_HOST;
-const TOKEN =
-  process.env.MESSENGER_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_TOKEN;
+// Load .env fallback for vars not already in process.env
+try {
+  for (const line of readFileSync(ENV_FILE, "utf8").split("\n")) {
+    const m = line.match(/^(\w+)=(.*)$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+  }
+} catch {
+  // .env file doesn't exist yet — that's fine if env vars are set
+}
+
+const HOST = process.env.CHANNEL_MESSENGER_HOST;
+const TOKEN = process.env.CHANNEL_MESSENGER_TOKEN;
 
 if (!HOST || !TOKEN) {
   log(
-    "Host and token must be set via MESSENGER_HOST/MESSENGER_TOKEN or plugin userConfig"
+    `CHANNEL_MESSENGER_HOST and CHANNEL_MESSENGER_TOKEN must be set via environment or ${ENV_FILE}`
   );
   process.exit(1);
 }
