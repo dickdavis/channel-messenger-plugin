@@ -5,15 +5,13 @@
   "author": {
     "name": "Dick Davis"
   },
-  "userConfig": {
-    "host": {
-      "description": "API base URL (e.g. https://api.example.com)",
-      "required": true
-    },
-    "token": {
-      "description": "Authentication token for the messaging API",
-      "required": true,
-      "sensitive": true
+  "channels": [
+    {
+      "server": "messenger",
+      "userConfig": {
+        "host": { "description": "API base URL (e.g. https://api.example.com)", "sensitive": false },
+        "token": { "description": "Authentication token for the messaging API", "sensitive": true }
+      }
     }
-  }
+  ]
 }
