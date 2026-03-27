@@ -9,8 +9,8 @@
     {
       "server": "messenger",
       "userConfig": {
-        "host": { "description": "API base URL (e.g. https://api.example.com)", "sensitive": false },
-        "token": { "description": "Authentication token for the messaging API", "sensitive": true }
+        "host": { "title": "Host", "description": "API base URL (e.g. https://api.example.com)", "type": "string", "sensitive": false },
+        "token": { "title": "Token", "description": "Authentication token for the messaging API", "type": "string", "sensitive": true }
       }
     }
   ]
