@@ -7,7 +7,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { appendFileSync, readFileSync, mkdirSync } from "fs";
+import { appendFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -44,6 +44,14 @@ let ws: WebSocket | null = null;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30_000;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
+
+interface PendingPermission {
+  tool_name: string;
+  description: string;
+  input_preview: string;
+}
+
+const pendingPermissions = new Map<string, PendingPermission>();
 
 // --- Session registration ---
 
@@ -85,7 +93,9 @@ function connectWebSocket() {
     try {
       const data = JSON.parse(String(event.data));
       log(`[messenger] WS received: ${JSON.stringify(data)}`);
-      if (data.type === "message" && data.message?.role !== "assistant") {
+      if (data.type === "permission_response") {
+        handlePermissionResponse(data.request_id, data.behavior);
+      } else if (data.type === "message" && data.message?.role !== "assistant") {
         deliverToChannel(data.message);
       }
     } catch {
@@ -96,11 +106,36 @@ function connectWebSocket() {
   ws.addEventListener("close", (event) => {
     log(`[messenger] WS closed: code=${event.code} reason=${event.reason}`);
     if (pingInterval) clearInterval(pingInterval);
+
+    for (const [requestId] of pendingPermissions) {
+      log(`[messenger] Auto-denying permission ${requestId} due to WS disconnect`);
+      void mcp.notification({
+        method: "notifications/claude/channel/permission",
+        params: { request_id: requestId, behavior: "deny" },
+      });
+    }
+    pendingPermissions.clear();
+
     scheduleReconnect();
   });
   ws.addEventListener("error", (event) => {
     log(`[messenger] WS error:`, event);
     ws?.close();
+  });
+}
+
+function handlePermissionResponse(requestId: string, behavior: "allow" | "deny") {
+  if (!pendingPermissions.has(requestId)) {
+    log(`[messenger] Ignoring permission response for unknown request: ${requestId}`);
+    return;
+  }
+
+  pendingPermissions.delete(requestId);
+  log(`[messenger] Permission ${behavior} for ${requestId}`);
+
+  void mcp.notification({
+    method: "notifications/claude/channel/permission",
+    params: { request_id: requestId, behavior },
   });
 }
 
@@ -138,7 +173,10 @@ const mcp = new Server(
   {
     capabilities: {
       tools: {},
-      experimental: { "claude/channel": {} },
+      experimental: {
+        "claude/channel": {},
+        "claude/channel/permission": {},
+      },
     },
     instructions: [
       "You are connected to a messaging channel via the messenger plugin.",
@@ -193,17 +231,57 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
 });
 
+mcp.fallbackNotificationHandler = async (notification) => {
+  if (notification.method === "notifications/claude/channel/permission_request") {
+    const { request_id, tool_name, description, input_preview } = notification.params as {
+      request_id: string;
+      tool_name: string;
+      description: string;
+      input_preview: string;
+    };
+
+    log(`[messenger] Permission request: ${request_id} for ${tool_name}`);
+
+    pendingPermissions.set(request_id, { tool_name, description, input_preview });
+
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: "permission_request",
+        request_id,
+        tool_name,
+        description,
+        input_preview,
+      }));
+    } else {
+      log(`[messenger] WS not connected, auto-denying permission ${request_id}`);
+      void mcp.notification({
+        method: "notifications/claude/channel/permission",
+        params: { request_id, behavior: "deny" },
+      });
+      pendingPermissions.delete(request_id);
+    }
+  }
+};
+
 // --- Startup ---
+
+process.on("unhandledRejection", (err) => {
+  log(`[messenger] Unhandled rejection: ${err}`);
+});
+process.on("uncaughtException", (err) => {
+  log(`[messenger] Uncaught exception: ${err}`);
+});
 
 async function main() {
   const session = await registerSession();
   sessionId = session.id;
+  log(`[messenger] Session registered: ${session.id}`);
 
   connectWebSocket();
   await mcp.connect(new StdioServerTransport());
 }
 
 main().catch((err) => {
-  log("Fatal:", err);
+  log(`[messenger] Fatal: ${err}`);
   process.exit(1);
 });
