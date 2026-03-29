@@ -7,7 +7,9 @@
     "test": "bun test",
     "lint": "bunx ts-standard",
     "format": "bunx ts-standard --fix",
-    "check": "bunx tsc --noEmit"
+    "check": "bunx tsc --noEmit",
+    "check:mcp": "bun scripts/check-mcp-json.ts",
+    "check:plugin": "bun scripts/check-plugin-json.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
